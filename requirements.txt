@@ -1,0 +1,13 @@
+jax[cuda12]
+jaxlib
+distrax
+flax
+torch
+torchvision
+torchaudio
+git+https://github.com/Genesis-Embodied-AI/Genesis.git
+hydra-core
+tensorboardX
+einops
+gymnasium[mujoco]
+tqdm

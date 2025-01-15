@@ -1,0 +1,42 @@
+defaults:
+  - env: ur5f2
+  - model: mlp_gru
+  - buffer: ppo
+  - _self_
+
+model:
+  action_std_scale: 2e-1
+
+agent:
+  model_cfg: ${model}
+  training_params:
+    lr: 1e-3
+    weight_decay: 1e-19
+
+env:
+  n_envs: 9
+  show_viewer: True
+  max_t: 2400
+  randomize_box: True
+  with_camera: False
+  vis_conf:
+    n_rendered_envs: null
+  ur5e_config:
+    randomize_hand: False
+
+buffer:
+  batch_size: 1
+
+logger:
+  log_dir: null
+
+steps: 7200
+
+load: True
+train: False
+verbose: False
+save_period: -1
+load_step: null #  null=last
+
+
+

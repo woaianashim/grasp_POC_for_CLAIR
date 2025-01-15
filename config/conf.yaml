@@ -1,0 +1,24 @@
+defaults:
+  - env: ur5f2
+  - model: mlp_gru
+  - buffer: ppo
+  - _self_
+
+agent:
+  model_cfg: ${model}
+  training_params:
+    lr: 1e-3
+    weight_decay: 1e-19
+
+logger:
+  log_dir: null
+
+steps: 2000000
+
+load: False
+train: True
+verbose: False
+save_period: 1e4
+load_step: null
+
+
