@@ -39,10 +39,6 @@ class UR5F2(BaseRobot):
         states = super().state_dict()
         states["joints"] = states["joints"][..., :-1]
         states["joints_vel"] = states["joints_vel"][..., :-1]
-        # finger_names = ["left_inner_finger", "right_inner_finger"]
-        # between_fingers = torch.stack(
-        #     [self.robot.get_link(lname).get_pos() for lname in finger_names], dim=-1
-        # ).mean(-1)
         left = self.robot.get_link("left_inner_finger").get_pos()
         right = self.robot.get_link("right_inner_finger").get_pos()
         ee = self.robot.get_link("ee_link").get_pos()

@@ -1,9 +1,8 @@
 n_envs: 4096
 show_viewer: False
 sticky: 1
-max_t: 3600
+max_t: 720
 trunc_is_done: False
-randomize_box: True
 vis_conf:
   n_rendered_envs: 1
 ur5e_config:
@@ -13,9 +12,36 @@ ur5e_config:
   randomize_hand: True
 reward_scales:
   grasped_pos: 0.03
-  grasped_height: 0.15
+  grasped_height: 1.5
   overdraft: -1
   asymmetry: -1e-5
   sq_distance: -0.1
   distance: -0.05
   ee_quat_delta: -1e-5
+object_configs:
+  # - kind: box
+  #   params:
+  #     size: 0.03
+  # - kind: box
+  #   params:
+  #     size: 0.04
+  # - kind: mesh
+  #   params:
+  #     file: base.stl
+  # - kind: box
+  #   params:
+  #     size:
+  #       - 0.06
+  #       - 0.02
+  #       - 0.03
+  - kind: sphere
+    params:
+      radius: 0.02
+  # - kind: cylinder
+  #   params:
+  #     height: 0.04
+  #     radius: 0.02
+  # - kind: cylinder
+  #   params:
+  #     height: 0.06
+  #     radius: 0.016

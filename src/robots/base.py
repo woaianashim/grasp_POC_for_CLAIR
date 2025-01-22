@@ -26,7 +26,8 @@ class BaseRobot:
             )
         else:
             start_pos = self.keyframe
-        self.robot.set_dofs_position(start_pos)
+        start_pos[..., -1] = start_pos[..., -2]  # Gripper simmetry
+        self.robot.set_dofs_position(self.keyframe)
         self.robot.control_dofs_position(start_pos)
         self._control = start_pos
         self.overdraft = torch.zeros_like(self.robot.get_qpos())

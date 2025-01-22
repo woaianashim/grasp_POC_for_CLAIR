@@ -4,4 +4,3 @@ n_covers: 4
 gamma: 0.99
 gae_lambda: 0.95
 value_logits_bins: ${bins}
-#capacity: 100000 # 1e5

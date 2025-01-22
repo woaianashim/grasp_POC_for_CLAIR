@@ -61,14 +61,6 @@ class GraspAgent:
         grad_fn = state.ds.value_and_grad(loss_fn, has_aux=True)
         ds, is_fin, (_, metric), grads = grad_fn(state.params)
         select_fin = partial(np.where, is_fin)
-        # metric["gradPolicy"] = {}
-        # for k in grads["policy"]:
-        #     metric["gradPolicy"][k] = np.minimum(
-        #         100, optax.global_norm(grads["policy"][k])
-        #     )
-        # metric["gradPolicy"]["policy"] = np.minimum(
-        #     100, optax.global_norm(grads["policy"])
-        # )
 
         new_state = state.apply_gradients(grads=grads)
         new_state = new_state.replace(
@@ -79,19 +71,8 @@ class GraspAgent:
         return new_state, metric
 
     def train_policy(self, batch):
-        # batch = tree_map(lambda x: x.reshape((-1,) + x.shape[2:]), batch)  # B*T; [T0]
         new_state, metric = self._train_policy(self.state, self.rngs, batch)
-        # Update slow critic
         params = new_state.params
-        critic_params = params["critic"]
-        slow_critic_params = params["slow_critic"]
-        slow_critic_params = tree_map(
-            lambda n, o: o * self.model.slow_update_rate
-            + n * (1 - self.model.slow_update_rate),
-            critic_params,
-            slow_critic_params,
-        )
-        params["slow_critic"] = slow_critic_params
         self.state = new_state.replace(params=params)
 
         return metric
@@ -101,20 +82,6 @@ class GraspAgent:
         return policy_metric
 
     def step(self, transition, h=None):
-        # e = transition["obs"]
-        # print(
-        #     "!@!",
-        #     e.mean(0),
-        #     e.std(0),
-        #     e.std(),
-        #     e[0],
-        #     e[1],
-        #     e[2],
-        #     np.abs(e[1] - e[0]).sum(),
-        #     e.shape,
-        #     "OBS!@!",
-        # )
-        # input()
         (
             action,
             action_logprob,

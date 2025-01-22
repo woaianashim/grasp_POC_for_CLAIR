@@ -95,7 +95,9 @@ class BaseWorld:
         return info
 
     def get_done(self):
-        self.trunc = self.scene.t >= self.max_t * self.sticky
+        self.trunc = (
+            self.scene.t - self.resetting_steps + 1
+        ) >= self.max_t * self.sticky
         self.done = self.trunc if self.trunc_is_done else False
         return self.done, self.trunc
 

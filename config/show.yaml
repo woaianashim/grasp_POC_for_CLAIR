@@ -16,8 +16,7 @@ agent:
 env:
   n_envs: 9
   show_viewer: True
-  max_t: 2400
-  randomize_box: True
+  max_t: 720
   with_camera: False
   vis_conf:
     n_rendered_envs: null
