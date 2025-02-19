@@ -32,13 +32,13 @@ class Object:
         ang *= 2 * torch.pi
         rad = rad * 0.4 + 0.3
         z_pos = torch.ones_like(ang) * self.z_pos
-        self.pos = torch.stack(
-            [rad * torch.cos(ang), rad * torch.sin(ang), z_pos], dim=-1
-        )
+        pos = torch.stack([rad * torch.cos(ang), rad * torch.sin(ang), z_pos], dim=-1)
+        return pos
 
     def sample_quat(self):  # TODO same problem
         quat = torch.randn((self.n_envs, 4)).cuda()
-        self.quat = quat / quat.norm(dim=-1, keepdim=True)
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+        return quat
 
     @property
     def z_pos(self):
@@ -73,17 +73,18 @@ class Object:
             )
 
     def reset(self):
-        self.sample_pos()
+        self.pos = self.sample_pos()
+        self.quat = self.sample_quat()
         self.inst.set_pos(self.pos)
-        self.sample_quat()
         self.inst.set_quat(self.quat)
 
 
 class Objects:
-    def __init__(self, scene, object_configs, n_envs=-1):
+    def __init__(self, scene, object_configs, n_envs=-1, with_goal=False):
         self._objects = []
         self.n_envs = n_envs
         self.state = {}
+        self.with_goal = with_goal
         for conf in object_configs:
             conf.kind = ItemKind[conf.kind]
             obj = Object(**conf, n_envs=n_envs)

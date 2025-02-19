@@ -1,0 +1,46 @@
+defaults:
+  - env: ur5f2
+  - model: tqc_mlp_gru
+  - buffer: q_base
+  - _self_
+
+algo: tqc
+her: True
+env:
+  show_viewer: False
+  with_goal: True
+  n_envs: 50
+  sticky: 2
+  max_t: 550
+  reward_delta: False
+  trunc_is_done: False
+  time_obs: False
+  ur5e_config:
+    action_scale: 1e0
+    randomize_hand: True
+  reward_scales:
+    grasped_pos: 0.08
+    grasped_height: 0.15
+    overdraft: -1
+    sq_distance: 0 #-10.1
+    distance: -0.05
+    grasped_dist_to_goal: 0.05
+
+agent:
+  model_cfg: ${model}
+  training_params:
+    lr: 3e-4
+    weight_decay: 1e-19
+
+logger:
+  log_dir: null
+  verbose: True
+
+steps: 2000000
+
+load: False
+train: True
+save_period: 5e3
+load_step: null
+
+

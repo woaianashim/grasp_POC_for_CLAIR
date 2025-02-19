@@ -2,7 +2,8 @@ from genesis import torch
 from .robots.base_world import BaseWorld
 from .robots.UR5E import UR5F2
 from .robots.objects import Objects
-from gymnasium.spaces import Box
+from gymnasium.spaces import Box, Dict
+from copy import deepcopy
 
 
 class UR5F2Box(BaseWorld):
@@ -15,11 +16,13 @@ class UR5F2Box(BaseWorld):
         show_viewer=False,
         ur5e_config=None,
         trunc_is_done=False,
-        randomize_obj_pos=False,
         with_camera=False,
         vis_conf={},
         reward_scales={},
+        reward_delta=False,
+        time_obs=False,
         resetting_steps=20,
+        with_goal=False,
     ):
         super().__init__(
             n_envs,
@@ -31,9 +34,11 @@ class UR5F2Box(BaseWorld):
             with_camera=with_camera,
         )
         self.object_configs = object_configs
-        self.randomize_obj_pos = randomize_obj_pos
         self.ur5e_config = ur5e_config
         self.reward_scales = reward_scales
+        self.reward_delta = reward_delta
+        self.time_obs = time_obs
+        self.with_goal = with_goal
         self.resetting_steps = resetting_steps
         self.init_scene()
         self.robot.configure()
@@ -41,35 +46,44 @@ class UR5F2Box(BaseWorld):
     def _init_scene(self):
         self.state = {}
         self.robot = UR5F2(self.scene, self.ur5e_config)
-        self.objects = Objects(self.scene, self.object_configs, n_envs=self.n_envs)
+        self.objects = Objects(
+            self.scene,
+            self.object_configs,
+            n_envs=self.n_envs,
+            with_goal=self.with_goal,
+        )
 
     def _reset(self):
         self.scene.reset()
         self.robot.reset()
         self.objects.reset()
         for _ in range(self.resetting_steps):
-            self.update_state()
             self.scene.step()
         self.update_state()
+        if self.with_goal:
+            self.state["goal"] = self.state["core_point"]
         self.state["original_target_pos"] = self.state["target_pos"]
         self.state["reward"] = torch.zeros(self.n_envs).numpy()
         self.state["tot_reward"] = torch.zeros(self.n_envs).numpy()
         self.state["initial_dist"] = self.state["dist"]
+        self.old_state = deepcopy(self.state)
 
     def _step(self, action):
         self.robot.control(action)
         self.state["action"] = torch.from_dlpack(action)
-        for _ in range(self.sticky):
-            self.scene.step()
-            self.update_state()
+        self.scene.step()
         self.update_state()
         obs = self.get_obs()
-        reward, rewards = self.get_reward()
+        reward, potentials = self.get_reward(
+            self.state,
+            self.old_state,
+        )
+        self.state["reward"] = reward
+        reward = reward[..., None]  # FIX
         done, trunc = self.get_done()
         info = self.get_info()
-        for key, value in rewards.items():
+        for key, value in potentials.items():
             info[key] = value.cpu().numpy()
-            info[key + "_scaled"] = value.cpu().numpy() * self.reward_scales[key]
         info["reward"] = reward.squeeze().cpu().numpy()
         self.state["tot_reward"] += reward.squeeze().cpu().numpy()
         info["tot_reward"] = self.state["tot_reward"]
@@ -78,59 +92,76 @@ class UR5F2Box(BaseWorld):
     def update_state(self):
         robot_state = self.robot.state_dict()
         objects_state = self.objects.state_dict()
+        self.old_state = deepcopy(self.state)
         self.state.update(robot_state)
         self.state.update(objects_state)
         self.state["dist"] = torch.minimum(
             torch.norm(self.state["target_pos"] - self.state["core_point"], dim=-1),
             torch.tensor(2.0).cuda(),
         )
-        self.state["asymmetry"] = (
-            self.state["left_finger"] - self.state["right_finger"]
-        )[..., 2].abs()
 
     def get_obs(self):
-        robot_pose = torch.cat([self.state["pos"], self.state["quat"]], dim=-1).flatten(
-            1
-        )
         target_oh = self.objects.target.float()
-        obs = torch.cat(
-            [
-                robot_pose,
-                self.state["joints"],
-                self.state["joints_vel"],
-                self.state["target_pos"],
-                self.state["target_quat"],
-                target_oh,
-            ],
-            dim=-1,
-        )
+        obs = {
+            "robot_pos": self.state["pos"].flatten(1),  # n_geom x 3 -> n_geom*3
+            "robot_quat": self.state["quat"].flatten(1),
+            "joints": self.state["joints"].contiguous(),
+            "joints_vel": self.state["joints_vel"].contiguous(),
+            "target_pos": self.state["target_pos"],
+            "target_quat": self.state["target_quat"],
+            "target_code": target_oh,
+            "core_point": self.state["core_point"],
+        }
+        if self.time_obs:
+            obs["time"] = (
+                torch.ones_like(self.state["joints"][..., -1:])
+                * self.scene.t
+                / self.max_t
+            )
+        if self.with_goal:
+            obs["goal"] = self.state["goal"]
         return obs
 
-    def get_reward(self):
-        rewards = {}
-        target_height = torch.clip(
-            (self.state["target_pos"] - self.state["original_target_pos"])[..., 2],
-            0,
-            2,
-        )
-        rewards["grasped_pos"] = (
-            torch.relu(0.025 - self.state["dist"]) / 0.025  # FIX
-        ) ** 2
-        rewards["grasped_height"] = target_height * rewards["grasped_pos"]
-        rewards["overdraft"] = torch.minimum(
-            self.state["overdraft"].sum(-1), torch.tensor(10.0).cuda()
-        )
-        rewards["asymmetry"] = self.state["asymmetry"]
-        rewards["sq_distance"] = self.state["dist"] ** 2
-        rewards["distance"] = self.state["dist"]
-        rewards["ee_quat_delta"] = torch.norm(self.state["ee_quat_delta"], dim=-1)
+    def get_reward(self, state, old_state):
+        potentials = self._get_potentials(state)
+        if self.reward_delta:
+            old_potentials = self._get_potentials(old_state)
         reward = 0
-        for key, value in rewards.items():
-            reward += self.reward_scales[key] * value
-        if self.trunc_is_done and self.done:
-            raise NotImplementedError
-        self.state["reward"] = reward
-        return reward[..., None], rewards
+        potentials["overdraft"] = state["overdraft"].clip(max=10.0)
+        for key, scale in self.reward_scales.items():
+            reward += scale * potentials[key]
+            if self.reward_delta:
+                reward -= scale * old_potentials.get(key, 0)
+        return reward, potentials
+
+    def _get_potentials(self, state):
+        potentials = {}
+
+        dist = torch.minimum(
+            torch.norm(state["target_pos"] - state["core_point"], dim=-1),
+            torch.tensor(2.0).to(state["target_pos"].device),
+        )
+
+        def rescale(x):  # 1-sigmoid(log(dist)) rescales [0, inf] to [2, 0]
+            return 1 / (x + 0.5)
+
+        obj_height = state["target_pos"][..., 2].clip(
+            min=state["target_pos"][..., 2] * 0,
+            max=state["goal"][..., 2] if self.with_goal else 0.3,
+        )
+
+        grasped_coef = rescale(dist)
+
+        potentials["grasped_pos"] = grasped_coef
+        potentials["obj_height"] = obj_height
+        potentials["grasped_height"] = grasped_coef * obj_height
+        potentials["sq_distance"] = dist**2
+        potentials["distance"] = dist
+        if self.with_goal:
+            dist_to_goal = torch.norm(state["target_pos"] - state["goal"])
+            potentials["grasped_dist_to_goal"] = rescale(dist_to_goal) * grasped_coef
+
+        return potentials
 
     def _get_info(self):
         info = {}
@@ -150,16 +181,26 @@ class UR5F2Box(BaseWorld):
 
     @property
     def observation_space(self):
-        n_geoms_obs = self.robot.robot.n_geoms * 7
-        n_joints_obs = self.robot.action_dim * 2
-        n_obj_obs = 7
+        n_geoms = self.robot.robot.n_geoms
+        n_joints = self.robot.action_dim
         n_obj = len(self.objects)
-        observation_space = Box(
-            low=-torch.inf,
-            high=torch.inf,
-            shape=(
-                self.n_envs,
-                n_geoms_obs + n_joints_obs + n_obj_obs + n_obj,
-            ),
-        )
+
+        def box_space(shape):
+            return Box(low=-100, high=100, shape=(self.n_envs,) + shape)
+
+        spaces = {
+            "robot_pos": box_space((3 * n_geoms,)),
+            "robot_quat": box_space((4 * n_geoms,)),
+            "joints": box_space((n_joints,)),
+            "joints_vel": box_space((n_joints,)),
+            "target_pos": box_space((3,)),
+            "target_quat": box_space((4,)),
+            "target_code": box_space((n_obj,)),
+            "core_point": box_space((3,)),
+        }
+        if self.time_obs:
+            spaces["time"] = box_space((1,))
+        if self.with_goal:
+            spaces["goal"] = box_space((3,))
+        observation_space = Dict(spaces)
         return observation_space

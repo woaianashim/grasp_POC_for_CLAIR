@@ -1,0 +1,5 @@
+batch_size: 1024
+initial_size: 200
+seq_len: 6
+capacity: 200000 # 3e5
+mode: curiosity

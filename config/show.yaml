@@ -5,7 +5,7 @@ defaults:
   - _self_
 
 model:
-  action_std_scale: 2e-1
+  action_std_scale: 2e-2
 
 agent:
   model_cfg: ${model}

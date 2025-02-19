@@ -6,7 +6,7 @@ import optax
 from flax.training.train_state import TrainState as BaseTrainState
 from flax.training.dynamic_scale import DynamicScale
 from functools import partial
-from .model import GraspModel
+from src.models import TQCGraspModel
 import os
 
 
@@ -16,30 +16,33 @@ class TrainState(
     ds: DynamicScale
 
 
-class GraspAgent:
+class TQCGraspAgent:
     def __init__(self, model_cfg, training_params, env=None, dummy_batch=None):
         self._key = jax.random.PRNGKey(0)
         obs_space, act_space = env.observation_space, env.action_space
         self.obs_shape = obs_space.shape
         self.act_shape = act_space.shape
-        self.model = GraspModel(
+        self.model = TQCGraspModel(
             **model_cfg, obs_shape=obs_space.shape, act_shape=act_space.shape
         )
         self.params = training_params
         self.init_model(dummy_batch)
 
     def init_model(self, dummy_data):
+        self.dobs = dummy_data["obs"]
         policy_variables = self.model.init(
-            self.rngs, batch=dummy_data, method=self.model.ppo_loss_and_grads
+            self.rngs, batch=dummy_data, method=self.model.tqc_loss_and_grads
         )
         params = policy_variables["params"]
+        params["slow_critic"] = tree_map(lambda m: m, params["critic"].copy())
+        params["critic_sg"] = tree_map(lambda m: m, params["critic"].copy())
         optimizer = optax.chain(
             optax.clip_by_global_norm(0.5),
             optax.adam(self.params.lr),
             optax.add_decayed_weights(self.params.weight_decay),
         )
         self.state = TrainState.create(
-            apply_fn=partial(self.model.apply, method=self.model.ppo_loss_and_grads),
+            apply_fn=partial(self.model.apply, method=self.model.tqc_loss_and_grads),
             params=params,
             tx=optimizer,
             ds=DynamicScale(),
@@ -50,6 +53,7 @@ class GraspAgent:
     @staticmethod
     @jax.jit
     def _train_policy(state, rngs, batch):
+
         def loss_fn(params):
             (loss, metric) = state.apply_fn(
                 {"params": params},
@@ -73,36 +77,53 @@ class GraspAgent:
     def train_policy(self, batch):
         new_state, metric = self._train_policy(self.state, self.rngs, batch)
         params = new_state.params
+        params["critic_sg"] = tree_map(lambda n: n, params["critic"].copy())
+        params["slow_critic"] = tree_map(
+            lambda n, o: o * self.model.slow_update_rate
+            + n * (1 - self.model.slow_update_rate),
+            params["critic"],
+            params["slow_critic"],
+        )
         self.state = new_state.replace(params=params)
 
-        return metric
+        errors = metric["batch_errors"]
+        del metric["batch_errors"]
+
+        return metric, errors
 
     def train(self, batch):
-        policy_metric = self.train_policy(batch)
-        return policy_metric
+        policy_metric, errors = self.train_policy(batch)
+        return policy_metric, errors
 
     def step(self, transition, h=None):
+        if h is None and self.latent_state is None:
+            self.latent_state = self.model.apply(
+                self.state.params,
+                (
+                    transition.obs[None]
+                    if len(transition.obs.shape) == 2
+                    else transition.obs
+                ),
+                rngs=self.rngs,
+                method=self.model.initial_state,
+            )
         (
-            action,
-            action_logprob,
-            value,
+            transition.action,
             self.latent_state,
-            mean,
-            value_logits,
-            action_logstd,
         ) = self.act(
             {"params": self.state.params},
-            obs=transition["obs"],
-            h=self.latent_state,
+            obs=(
+                transition.obs[None]
+                if len(transition.obs.shape) == 2
+                else transition.obs
+            ),
+            h=h or self.latent_state,
             rngs=self.rngs,
         )
-        return (
-            action,
-            action_logprob,
-            value,
-            value_logits,
-            action_logstd,
-            self.latent_state,
+        transition.action = (
+            transition.action[0]
+            if transition.action.shape[0] == 1
+            else transition.action
         )
 
     def reset_latent(self, obs=None):
@@ -115,15 +136,6 @@ class GraspAgent:
                 rngs=self.rngs,
                 method=self.model.initial_state,
             )
-
-    def value(self, transition, h=None):
-        _, _, value, _, _, value_logits, _ = self.act(  # Don't update latent state here
-            {"params": self.state.params},
-            obs=transition["next_obs"],
-            h=self.latent_state,
-            rngs=self.rngs,
-        )
-        return value
 
     @property
     def rngs(self):

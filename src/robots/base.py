@@ -30,7 +30,7 @@ class BaseRobot:
         self.robot.set_dofs_position(self.keyframe)
         self.robot.control_dofs_position(start_pos)
         self._control = start_pos
-        self.overdraft = torch.zeros_like(self.robot.get_qpos())
+        self.overdraft = torch.zeros_like(self.robot.get_qpos()[..., 0])
         self._reset()
 
     def state_dict(self):
@@ -56,7 +56,9 @@ class BaseRobot:
         action = action * self.config.action_scale
         action = torch.from_dlpack(action)
         if ctype == "position":
-            action = action * (self.limits[1] - self.limits[0])
+            action = (
+                action * (self.limits[1] - self.limits[0]) / 4
+            )  # Divide by 2 for compatibility with tanh
             mode = self.config.control_mode
             if mode == "delta":
                 self._control = self.robot.get_qpos() + action
@@ -78,5 +80,5 @@ class BaseRobot:
 
     def clip_control(self):
         clipped_control = torch.clip(self._control, self.limits[0], self.limits[1])
-        self.overdraft = (self._control - clipped_control) ** 2
+        self.overdraft = torch.norm(self._control - clipped_control, dim=-1)
         self._control = clipped_control

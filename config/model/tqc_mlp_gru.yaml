@@ -1,0 +1,75 @@
+# @package _global_
+bins: 255
+
+model:
+  net_kwargs: ${net_kwargs}
+  critic_kwargs: ${critic_kwargs}
+  act_kwargs: ${act_kwargs}
+  # Hyperparameters
+  slow_update_rate: 0.995
+  action_std_scale: 1e-3
+  critic_loss_scale: 5
+  alpha_loss_scale: 1
+  target_entropy_scale: -1.9
+  useless_fine_scale: 20
+  n_atoms: 25
+  n_approximations: 5
+  drop_target_quantiles: 20 # 4 droped
+  gamma: 0.99
+
+net_kwargs:
+  hidden_sizes:
+    - 128
+  layers_cfg: ${layer_cfg}
+
+
+critic_kwargs:
+  hidden_sizes:
+    - 512
+    - 256
+    - 256
+  linear_kwargs: ${layer_cfg}
+  out_kwargs: ${output_layer_cfg}
+  out_features: ${bins}
+
+act_kwargs:
+  skip_connection: True
+  hidden_sizes:
+    - 512
+    - 256
+    - 256
+  linear_kwargs: ${layer_cfg}
+  out_kwargs: ${actor_output_layer_cfg}
+
+layer_cfg:
+  act_fn: silu
+  norm_layer: LayerNorm
+  init_kwargs: ${init}
+  use_bias: False
+
+output_layer_cfg:
+  act_fn: None
+  norm_layer: None
+  init_kwargs: ${zero_init} #${almost_zero_init}
+  use_bias: True
+
+actor_output_layer_cfg:
+  act_fn: None
+  norm_layer: None
+  init_kwargs: ${zero_init}
+  use_bias: False
+
+init:
+  scale: 1.13
+  mode: fan_avg
+  distribution: truncated_normal
+
+almost_zero_init:
+  scale: 0.9
+  mode: fan_avg
+  distribution: truncated_normal
+
+zero_init:
+  scale: 0.0
+  mode: fan_avg
+  distribution: truncated_normal

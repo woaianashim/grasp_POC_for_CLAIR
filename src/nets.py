@@ -5,6 +5,8 @@ from typing import List, Dict
 
 __all__ = ["MLPWithGRU", "MLPHead"]
 
+dtype = np.float32  # np.bfloat16
+
 
 class MLPWithGRU(nn.Module):
     hidden_sizes: List[int]
@@ -44,7 +46,8 @@ class MLPHead(nn.Module):
             )
         self.out_layer = LinNormAct(features=self.out_features, **self.out_kwargs)
 
-    def __call__(self, inp):
+    def __call__(self, *inputs):
+        inp = np.concatenate(inputs, -1)
         x = inp
         for layer in self.layers:
             x = layer(x)
@@ -60,3 +63,18 @@ class ActorHead(MLPHead):
         mean_logstd = super().__call__(x)
         mean, log_std = np.split(mean_logstd, 2, axis=-1)
         return mean, log_std
+
+
+class TQCCritic(nn.Module):
+    n_critics: int
+    critic_kwargs: Dict
+
+    def setup(self):
+        self.critics = [MLPHead(**self.critic_kwargs) for _ in range(self.n_critics)]
+        self.log_alpha = self.param("log_alpha", lambda rng: -5 * np.ones(()))
+
+    def __call__(self, *inputs):
+        quantiles = []
+        for critic in self.critics:
+            quantiles.append(critic(*inputs))
+        return np.stack(quantiles, axis=-2)

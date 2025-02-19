@@ -8,20 +8,19 @@ vis_conf:
 ur5e_config:
   control_mode: delta
   control_type: position
-  action_scale: 3e-3
+  action_scale: 1e-3
   randomize_hand: True
 reward_scales:
   grasped_pos: 0.03
   grasped_height: 1.5
   overdraft: -1
-  asymmetry: -1e-5
   sq_distance: -0.1
   distance: -0.05
-  ee_quat_delta: -1e-5
+  # grasped_dist_to_goal: -0.05
 object_configs:
-  # - kind: box
-  #   params:
-  #     size: 0.03
+  - kind: box
+    params:
+      size: 0.03
   # - kind: box
   #   params:
   #     size: 0.04
@@ -34,9 +33,9 @@ object_configs:
   #       - 0.06
   #       - 0.02
   #       - 0.03
-  - kind: sphere
-    params:
-      radius: 0.02
+  # - kind: sphere
+  #   params:
+  #     radius: 0.02
   # - kind: cylinder
   #   params:
   #     height: 0.04

@@ -1,12 +1,12 @@
 import flax.linen as nn
 from jax.lax import stop_gradient as sg
 import jax.numpy as np
-from .nets import MLPWithGRU, MLPHead, ActorHead
+from src.nets import MLPWithGRU, MLPHead, ActorHead
 from typing import Dict, Tuple
 from src.dists import C51, Normal
 
 
-class GraspModel(nn.Module):
+class PPOGraspModel(nn.Module):
     obs_shape: Tuple
     act_shape: Tuple
     # KWArgs
@@ -70,9 +70,7 @@ class GraspModel(nn.Module):
         advantage_raw = np.clip(
             advantage_raw, -3, 3
         )  # TODO how to make scale-invariant?
-        advantage = (
-            advantage_raw - advantage_raw.mean()
-        ) / (  # is median working instead?
+        advantage = (advantage_raw - advantage_raw.mean()) / (
             advantage_raw.std() + 1e-8
         )
         advantage = advantage.squeeze(-1)
@@ -129,7 +127,6 @@ class GraspModel(nn.Module):
             action_logprob,
             value,
             h,
-            action_mean,
             value_logits,
             action_logstd,
         )

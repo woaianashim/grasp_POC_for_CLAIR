@@ -19,7 +19,7 @@ class BaseWorld:
     ):
         self._n_envs = n_envs
         self.sticky = sticky
-        self.dt = dt
+        self.dt = dt * sticky
         self.max_t = max_t
         self._show_viewer = show_viewer
         self.trunc_is_done = trunc_is_done
@@ -30,6 +30,7 @@ class BaseWorld:
         self.trunc = self.done = False
         self.init_genesis()
         self.scene = gs.Scene(
+            sim_options=gs.options.SimOptions(dt=self.dt, substeps=self.sticky),
             show_viewer=self.show_viewer,
             vis_options=gs.options.VisOptions(**self.vis_conf),
             rigid_options=gs.options.RigidOptions(
@@ -53,7 +54,7 @@ class BaseWorld:
             )
         self._init_scene()
         self.scene.build(
-            n_envs=self.n_envs, env_spacing=(1.0, 1.0) if self.n_envs < 30 else (0, 0.0)
+            n_envs=self.n_envs, env_spacing=(1.0, 1.0) if self.n_envs < 10 else (0, 0.0)
         )
 
     def _init_scene(self):
@@ -65,7 +66,7 @@ class BaseWorld:
             self.cam.start_recording()
         obs = self.get_obs()
         info = self.get_info()
-        return to_jax(obs), info
+        return {k: to_jax(v) for k, v in obs.items()}, info
 
     def _reset(self):
         raise NotImplementedError
@@ -74,7 +75,7 @@ class BaseWorld:
         obs, reward, done, trunc, info = self._step(action)
         if self.with_camera:
             self.cam.render()
-        return to_jax(obs), to_jax(reward), done, trunc, info
+        return {k: to_jax(v) for k, v in obs.items()}, to_jax(reward), done, trunc, info
 
     def _step(self, action):
         raise NotImplementedError
@@ -97,7 +98,7 @@ class BaseWorld:
     def get_done(self):
         self.trunc = (
             self.scene.t - self.resetting_steps + 1
-        ) >= self.max_t * self.sticky
+        ) >= self.max_t  # * self.sticky
         self.done = self.trunc if self.trunc_is_done else False
         return self.done, self.trunc
 

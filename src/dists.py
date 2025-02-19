@@ -3,13 +3,15 @@ import jax
 import jax.numpy as np
 from functools import partial
 
+dtype = np.float32  # np.bfloat16
+
 
 def cast_to_type(x, dtype):
     return np.astype(x, dtype)
 
 
-cast = partial(cast_to_type, dtype=np.float32)
-# cast = partial(cast_to_type, dtype=np.bfloat16) FIX still same bf16 problem
+# cast = partial(cast_to_type, dtype=np.float32)
+cast = partial(cast_to_type, dtype=dtype)  # FIX still same bf16 problem
 uncast = partial(cast_to_type, dtype=np.float32)
 
 
@@ -66,6 +68,18 @@ class C51(distrax.Categorical):  # C51 with symlog transform
         return log_prob
 
 
+class TQD:
+    def __init__(self, atoms, n_atoms=None):
+        self.n_atoms = n_atoms
+        self.atoms = atoms.reshape(*atoms.shape[:-2], -1)
+
+    def bot_quantiles(self, n):
+        return np.sort(self.atoms, -1)[..., :-n]
+
+    def mean(self):
+        return self.atoms.mean(-1)
+
+
 def symlog(x):
     return np.sign(x) * np.log1p(np.abs(x))
 
@@ -77,6 +91,38 @@ def symexp(x):
 class Normal(distrax.Independent):
     def __init__(self, mean, log_std, std_scale=2e0):
         mean, log_std = uncast(mean), uncast(log_std)
+        std = np.exp(log_std) * std_scale
+        action_dist = distrax.Normal(mean, std)
+        super().__init__(distribution=action_dist, reinterpreted_batch_ndims=1)
+
+    def sample_and_log_prob(self, seed=None):
+        sample, logprobs = super().sample_and_log_prob(seed=seed)
+        return cast(sample), cast(logprobs)
+
+    @cast_fn
+    def log_prob(self, action):
+        return super().log_prob(action)
+
+
+class SquashedNormal(distrax.Independent):
+    def __init__(self, mean, log_std, std_scale=2e0):
+        mean, log_std = uncast(mean), uncast(log_std)
+        std = np.exp(log_std) * std_scale
+        action_dist = distrax.Transformed(distrax.Normal(mean, std), distrax.Tanh())
+        super().__init__(distribution=action_dist, reinterpreted_batch_ndims=1)
+
+    def sample_and_log_prob(self, seed=None):
+        sample, logprobs = super().sample_and_log_prob(seed=seed)
+        return cast(sample), cast(logprobs)
+
+    @cast_fn
+    def log_prob(self, action):
+        return super().log_prob(action)
+
+
+class SquashedStdNormal(distrax.Independent):
+    def __init__(self, mean, log_std, std_scale=2e0, logstd_range=4):
+        mean, log_std = uncast(mean), uncast(np.tanh(log_std) * logstd_range)
         std = np.exp(log_std) * std_scale
         action_dist = distrax.Normal(mean, std)
         super().__init__(distribution=action_dist, reinterpreted_batch_ndims=1)

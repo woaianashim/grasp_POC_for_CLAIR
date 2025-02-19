@@ -2,6 +2,8 @@ from jax.nn.initializers import variance_scaling
 import jax.numpy as np
 import flax.linen as nn
 
+dtype = np.float32  # np.bfloat16
+
 
 class BaseModule(nn.Module):
     def get_layer_norm(self, norm_layer):
@@ -27,7 +29,7 @@ class LayerNormAct(BaseModule):
     init_kwargs: dict
 
     def setup(self):
-        self.dtype = np.float32  # FIX: bfloat16 failed for some reason (~Wx=Wy)
+        self.dtype = dtype  # FIX: bfloat16 failed for some reason (~Wx=Wy)
         self.norm = self.get_layer_norm(self.norm_layer)
         self.act = self.get_activation(self.act_fn)
 
@@ -51,7 +53,7 @@ class LinNormAct(LayerNormAct):
             features=self.features,
             use_bias=self.use_bias,
             kernel_init=variance_scaling(**self.init_kwargs),
-            dtype=self.dtype,
+            # dtype=self.dtype,
         )
 
 
@@ -73,5 +75,5 @@ class ConvNormAct(LayerNormAct):
             kernel_init=variance_scaling(**self.init_kwargs),
             padding=self.padding,
             use_bias=self.use_bias,
-            dtype=self.dtype,
+            # dtype=self.dtype,
         )

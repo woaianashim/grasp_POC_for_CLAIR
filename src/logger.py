@@ -13,16 +13,18 @@ def log_scalar(writer, metrics, step):
 
 
 class Logger:
-    def __init__(self, log_dir=None):
+    def __init__(self, log_dir=None, verbose=False):
         if log_dir is None:
             log_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
         self.writer = SummaryWriter(log_dir=log_dir)
         self.log_dir = log_dir
+        self.verbose = verbose
         self.step = 0
 
     def log(self, step, metrics, prefix="train"):
         self.step = step
-
+        if self.verbose:
+            self.info(metrics)
         for key in metrics:
             if (
                 isinstance(metrics[key], (np.ndarray, _np.ndarray))
@@ -46,5 +48,19 @@ class Logger:
             else:
                 logger.warning(f"Unprocessed metric key {key}")
 
-    def info(self, *args, **kwargs):
-        logger.info(*args, **kwargs)
+    def info(self, info):
+        if self.verbose:
+            if isinstance(info, str):
+                logger.info(info)
+            else:
+                for k, v in info.items():
+                    if isinstance(
+                        v,
+                        (
+                            _np.ndarray,
+                            np.ndarray,
+                        ),
+                    ):
+                        logger.info(
+                            f"{k}: min {v.min():.4f} mean {v.mean():.4f} median {_np.median(v):.4f} max {v.max():.4f} std {v.std():.4f}"
+                        )
